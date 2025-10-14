@@ -125,8 +125,10 @@ def verify_signature(body: bytes, signature: str) -> bool:
 
 
 # ===== LINEコンテンツ取得 =====
-async def fetch_line_content(message_id: str) -> tuple[bytes, str]:
-    """LINE画像/音声コンテンツを取得"""
+async def fetch_line_content(message_id: str, retry_count: int = 3) -> tuple[bytes, str]:
+    """LINE画像/音声コンテンツを取得（リトライ機能付き）"""
+    import asyncio
+
     url = f"https://api.line.me/v2/bot/message/{message_id}/content"
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
 
@@ -134,22 +136,40 @@ async def fetch_line_content(message_id: str) -> tuple[bytes, str]:
     logger.info(f"URL: {url}")
     logger.info(f"Token prefix: {ACCESS_TOKEN[:20]}..." if ACCESS_TOKEN else "No token")
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        res = await client.get(url, headers=headers)
+    last_error = None
 
-        logger.info(f"LINE response: status={res.status_code}")
+    for attempt in range(retry_count):
+        try:
+            if attempt > 0:
+                wait_time = attempt * 0.5  # 0.5秒, 1秒と待機時間を増やす
+                logger.info(f"Retry {attempt + 1}/{retry_count} after {wait_time}s wait...")
+                await asyncio.sleep(wait_time)
 
-        if res.status_code != 200:
-            error_body = res.text[:500] if res.text else "No body"
-            logger.error(f"LINE content fetch failed: {error_body}")
-            raise HTTPException(
-                status_code=502,
-                detail=f"LINE content fetch failed: {res.status_code} - {error_body}"
-            )
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                res = await client.get(url, headers=headers)
 
-        mime = res.headers.get("content-type", "application/octet-stream")
-        logger.info(f"Success: size={len(res.content)} bytes, mime={mime}")
-        return res.content, mime
+                logger.info(f"LINE response (attempt {attempt + 1}): status={res.status_code}, headers={dict(res.headers)}")
+
+                if res.status_code == 200:
+                    mime = res.headers.get("content-type", "application/octet-stream")
+                    logger.info(f"Success: size={len(res.content)} bytes, mime={mime}")
+                    return res.content, mime
+
+                # 404の場合は詳細なエラー情報を記録
+                error_body = res.text[:500] if res.text else "No body"
+                last_error = f"Status {res.status_code}: {error_body}"
+                logger.warning(f"Attempt {attempt + 1} failed: {last_error}")
+
+        except Exception as e:
+            last_error = str(e)
+            logger.warning(f"Attempt {attempt + 1} exception: {last_error}")
+
+    # すべてのリトライが失敗
+    logger.error(f"All {retry_count} attempts failed. Last error: {last_error}")
+    raise HTTPException(
+        status_code=502,
+        detail=f"LINE content取得に失敗しました（{retry_count}回試行）。\n\n考えられる原因:\n1. アクセストークンの権限不足\n2. メッセージIDが無効\n\n最後のエラー: {last_error}"
+    )
 
 
 # ===== ChatGPT API =====
