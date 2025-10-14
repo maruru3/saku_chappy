@@ -130,15 +130,25 @@ async def fetch_line_content(message_id: str) -> tuple[bytes, str]:
     url = f"https://api.line.me/v2/bot/message/{message_id}/content"
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
 
+    logger.info(f"LINE content fetch: message_id={message_id}")
+    logger.info(f"URL: {url}")
+    logger.info(f"Token prefix: {ACCESS_TOKEN[:20]}..." if ACCESS_TOKEN else "No token")
+
     async with httpx.AsyncClient(timeout=30.0) as client:
         res = await client.get(url, headers=headers)
+
+        logger.info(f"LINE response: status={res.status_code}")
+
         if res.status_code != 200:
+            error_body = res.text[:500] if res.text else "No body"
+            logger.error(f"LINE content fetch failed: {error_body}")
             raise HTTPException(
                 status_code=502,
-                detail=f"LINE content fetch failed: {res.status_code}"
+                detail=f"LINE content fetch failed: {res.status_code} - {error_body}"
             )
 
         mime = res.headers.get("content-type", "application/octet-stream")
+        logger.info(f"Success: size={len(res.content)} bytes, mime={mime}")
         return res.content, mime
 
 
@@ -269,7 +279,13 @@ async def webhook(
             # ===== 画像メッセージ =====
             elif msg_type == "image":
                 logger.info(f"画像メッセージを受信: user_id={user_id}")
+                logger.info(f"Event data: {json.dumps(event, ensure_ascii=False)}")
+
                 message_id = event.get("message", {}).get("id")
+                logger.info(f"Message ID: {message_id}")
+
+                if not message_id:
+                    raise ValueError("Message ID not found in event")
 
                 # LINEから画像を取得
                 content, mime = await fetch_line_content(message_id)
