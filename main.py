@@ -11,12 +11,17 @@ import hashlib
 import base64
 import json
 import sqlite3
+import logging
 from typing import Any
 from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.responses import JSONResponse
+
+# ロギング設定
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 # ===== 環境変数 =====
@@ -263,9 +268,16 @@ async def webhook(
 
             # ===== 画像メッセージ =====
             elif msg_type == "image":
+                logger.info(f"画像メッセージを受信: user_id={user_id}")
                 message_id = event.get("message", {}).get("id")
+
+                # LINEから画像を取得
                 content, mime = await fetch_line_content(message_id)
+                logger.info(f"画像取得成功: size={len(content)} bytes, mime={mime}")
+
+                # Base64エンコード
                 b64_image = base64.b64encode(content).decode()
+                logger.info(f"Base64エンコード完了: length={len(b64_image)}")
 
                 messages = [
                     {
@@ -283,7 +295,10 @@ async def webhook(
                         ],
                     },
                 ]
+
+                logger.info("OpenAI APIに画像を送信中...")
                 reply_text = await chat_gpt(messages)
+                logger.info(f"画像処理完了: reply_length={len(reply_text)}")
 
             # ===== 音声メッセージ =====
             elif msg_type == "audio":
@@ -317,6 +332,15 @@ async def webhook(
             results.append({"ok": True, "type": msg_type, "userId": user_id})
 
         except Exception as e:
+            logger.error(f"エラー発生: type={msg_type}, user={user_id}, error={str(e)}", exc_info=True)
+
+            # エラーをユーザーに通知
+            error_msg = f"申し訳ございません。処理中にエラーが発生しました。\n\nエラー詳細: {str(e)[:200]}"
+            try:
+                await reply_to_line(reply_token, error_msg)
+            except Exception as reply_error:
+                logger.error(f"エラー返信も失敗: {str(reply_error)}")
+
             results.append(
                 {"ok": False, "type": msg_type, "error": str(e), "userId": user_id}
             )
