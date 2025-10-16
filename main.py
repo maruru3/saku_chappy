@@ -336,6 +336,48 @@ async def webhook(
                 reply_text = await chat_gpt(messages)
                 logger.info(f"画像処理完了: reply_length={len(reply_text)}")
 
+            # ===== スタンプメッセージ =====
+            elif msg_type == "sticker":
+                logger.info(f"スタンプメッセージを受信: user_id={user_id}")
+
+                # スタンプ情報を取得
+                sticker_id = event.get("message", {}).get("stickerId")
+                package_id = event.get("message", {}).get("packageId")
+                sticker_resource_type = event.get("message", {}).get("stickerResourceType", "STATIC")
+
+                logger.info(f"Sticker: packageId={package_id}, stickerId={sticker_id}, type={sticker_resource_type}")
+
+                # スタンプ画像URL（LINEの公式スタンプ画像URL）
+                # アニメーションスタンプの場合は静止画を取得
+                if sticker_resource_type == "ANIMATION":
+                    sticker_url = f"https://stickershop.line-scdn.net/stickershop/v1/sticker/{sticker_id}/android/sticker.png"
+                else:
+                    sticker_url = f"https://stickershop.line-scdn.net/stickershop/v1/sticker/{sticker_id}/android/sticker.png"
+
+                logger.info(f"Sticker URL: {sticker_url}")
+
+                # スタンプ画像をGPT-4oで分析
+                messages = [
+                    {
+                        "role": "system",
+                        "content": SYS_PROMPT + " スタンプが送られたら、その画像を見て感情や内容を読み取り、適切に返事をしてください。",
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "このスタンプの感情や意味を読み取って、適切に返事をしてください。"},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": sticker_url},
+                            },
+                        ],
+                    },
+                ]
+
+                logger.info("OpenAI APIにスタンプ画像を送信中...")
+                reply_text = await chat_gpt(messages)
+                logger.info(f"スタンプ処理完了: reply_length={len(reply_text)}")
+
             # ===== 音声メッセージ =====
             elif msg_type == "audio":
                 message_id = event.get("message", {}).get("id")
@@ -361,7 +403,7 @@ async def webhook(
 
             # ===== その他 =====
             else:
-                reply_text = "現在はテキスト・画像・音声に対応しています。"
+                reply_text = "現在はテキスト・画像・音声・スタンプに対応しています。"
 
             # 返信
             await reply_to_line(reply_token, reply_text)
