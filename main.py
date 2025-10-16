@@ -129,7 +129,7 @@ async def fetch_line_content(message_id: str, retry_count: int = 3) -> tuple[byt
     """LINE画像/音声コンテンツを取得（リトライ機能付き）"""
     import asyncio
 
-    url = f"https://api.line.me/v2/bot/message/{message_id}/content"
+    url = f"https://api-data.line.me/v2/bot/message/{message_id}/content"
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
 
     logger.info(f"LINE content fetch: message_id={message_id}")
