@@ -181,7 +181,7 @@ async def chat_gpt(messages: list[dict[str, Any]]) -> str:
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "gpt-4o",
+        "model": "gpt-5",
         "messages": messages,
         "temperature": 0.3,
     }
