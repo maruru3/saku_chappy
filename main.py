@@ -183,7 +183,8 @@ async def chat_gpt(messages: list[dict[str, Any]]) -> str:
     payload = {
         "model": "gpt-5",
         "messages": messages,
-        "temperature": 0.3,
+        # gpt-5はtemperature=1のみサポート（デフォルト値）
+        # "temperature": 1,  # デフォルトなので省略
     }
 
     async with httpx.AsyncClient(timeout=60.0) as client:
