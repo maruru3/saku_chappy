@@ -205,9 +205,43 @@ async def chat_gpt(messages: list[dict[str, Any]]) -> str:
         )
 
 
+# ===== DALL-E 3 画像生成 =====
+async def generate_image_with_dalle(prompt: str) -> str:
+    """DALL-E 3で画像を生成してURLを返す"""
+    url = "https://api.openai.com/v1/images/generations"
+    headers = {
+        "Authorization": f"Bearer {OPENAI_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": "dall-e-3",
+        "prompt": prompt,
+        "n": 1,
+        "size": "1024x1024",
+        "quality": "standard",
+    }
+
+    logger.info(f"DALL-E 3画像生成開始: prompt={prompt[:100]}...")
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        res = await client.post(url, headers=headers, json=payload)
+        data = res.json()
+
+        if "error" in data:
+            logger.error(f"DALL-E 3エラー: {data['error']}")
+            raise HTTPException(
+                status_code=502,
+                detail=data["error"].get("message", "DALL-E 3 API error")
+            )
+
+        image_url = data.get("data", [{}])[0].get("url", "")
+        logger.info(f"DALL-E 3画像生成完了: url={image_url}")
+        return image_url
+
+
 # ===== LINE返信 =====
 async def reply_to_line(reply_token: str, text: str) -> None:
-    """LINEに返信"""
+    """LINEにテキストメッセージを返信"""
     url = "https://api.line.me/v2/bot/message/reply"
     headers = {
         "Content-Type": "application/json",
@@ -220,6 +254,33 @@ async def reply_to_line(reply_token: str, text: str) -> None:
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         await client.post(url, headers=headers, json=payload)
+
+
+async def reply_image_to_line(reply_token: str, image_url: str, preview_url: str = None) -> None:
+    """LINEに画像メッセージを返信"""
+    url = "https://api.line.me/v2/bot/message/reply"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+    }
+    payload = {
+        "replyToken": reply_token,
+        "messages": [
+            {
+                "type": "image",
+                "originalContentUrl": image_url,
+                "previewImageUrl": preview_url or image_url,
+            }
+        ],
+    }
+
+    logger.info(f"LINE画像返信: image_url={image_url}")
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        res = await client.post(url, headers=headers, json=payload)
+        logger.info(f"LINE画像返信レスポンス: status={res.status_code}")
+        if res.status_code != 200:
+            logger.error(f"LINE画像返信エラー: {res.text}")
 
 
 # ===== Webhookエンドポイント =====
@@ -396,24 +457,34 @@ async def webhook(
                 logger.info(f"Sticker: packageId={package_id}, stickerId={sticker_id}, type={sticker_resource_type}")
 
                 # スタンプ画像URL（LINEの公式スタンプ画像URL）
-                # アニメーションスタンプの場合は静止画を取得
-                if sticker_resource_type == "ANIMATION":
-                    sticker_url = f"https://stickershop.line-scdn.net/stickershop/v1/sticker/{sticker_id}/android/sticker.png"
-                else:
-                    sticker_url = f"https://stickershop.line-scdn.net/stickershop/v1/sticker/{sticker_id}/android/sticker.png"
-
+                sticker_url = f"https://stickershop.line-scdn.net/stickershop/v1/sticker/{sticker_id}/android/sticker.png"
                 logger.info(f"Sticker URL: {sticker_url}")
 
-                # スタンプ画像をGPT-4oで分析
-                messages = [
+                # ステップ1: スタンプ画像をGPT-4oで分析
+                analysis_messages = [
                     {
                         "role": "system",
-                        "content": SYS_PROMPT + " スタンプが送られたら、その画像を見て感情や内容を読み取り、適切に返事をしてください。",
+                        "content": """あなたはスタンプ画像を分析し、それに応じた画像生成プロンプトを作成する専門家です。
+
+スタンプの感情や雰囲気を読み取り、それに応えるような画像の説明を英語で簡潔に出力してください。
+
+【重要】出力形式:
+- 英語のプロンプトのみ出力（1-2文、最大70単語）
+- 日本語の説明は不要
+- DALL-E 3で生成しやすいシンプルな描写
+- 感情を視覚的に表現
+
+例:
+- 喜び → "A cheerful cartoon character jumping with joy, bright colors, happy atmosphere"
+- 悲しみ → "A cute character sitting under rain clouds, soft pastel colors, melancholic mood"
+- 愛情 → "Two adorable characters hugging with hearts around them, warm pink tones"
+- 応援 → "An energetic character cheering with pom-poms, vibrant colors, motivational scene"
+""",
                     },
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": "このスタンプの感情や意味を読み取って、適切に返事をしてください。"},
+                            {"type": "text", "text": "このスタンプの感情を読み取り、それに応える画像のプロンプトを英語で作成してください。"},
                             {
                                 "type": "image_url",
                                 "image_url": {"url": sticker_url},
@@ -422,9 +493,26 @@ async def webhook(
                     },
                 ]
 
-                logger.info("OpenAI APIにスタンプ画像を送信中...")
-                reply_text = await chat_gpt(messages)
-                logger.info(f"スタンプ処理完了: reply_length={len(reply_text)}")
+                logger.info("OpenAI APIにスタンプ画像を送信して分析中...")
+                dalle_prompt = await chat_gpt(analysis_messages)
+                logger.info(f"画像生成プロンプト: {dalle_prompt}")
+
+                # ステップ2: DALL-E 3で画像を生成
+                try:
+                    generated_image_url = await generate_image_with_dalle(dalle_prompt)
+                    logger.info(f"スタンプ応答画像生成完了: {generated_image_url}")
+
+                    # 画像で返信
+                    await reply_image_to_line(reply_token, generated_image_url)
+                    logger.info("スタンプに対して画像で返信しました")
+
+                    # 返信済みなのでreply_textは空にしてスキップ
+                    reply_text = None
+
+                except Exception as dalle_error:
+                    logger.error(f"DALL-E 3画像生成エラー: {dalle_error}")
+                    # DALL-E失敗時はテキストで返信
+                    reply_text = f"スタンプありがとう！（画像生成中にエラーが発生しました: {str(dalle_error)[:100]}）"
 
             # ===== 音声メッセージ =====
             elif msg_type == "audio":
@@ -453,8 +541,9 @@ async def webhook(
             else:
                 reply_text = "現在はテキスト・画像・音声・スタンプに対応しています。"
 
-            # 返信
-            await reply_to_line(reply_token, reply_text)
+            # 返信（reply_textがNoneでない場合のみ）
+            if reply_text is not None:
+                await reply_to_line(reply_token, reply_text)
             results.append({"ok": True, "type": msg_type, "userId": user_id})
 
         except Exception as e:
