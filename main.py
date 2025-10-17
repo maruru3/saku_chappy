@@ -474,20 +474,21 @@ async def webhook(
 - 日本語の説明は不要
 - DALL-E 3で生成しやすいシンプルな描写
 - 感情を視覚的に表現
-- **画像内にテキストメッセージを含める**: 感情に応じた短い日本語メッセージ（3-8文字）を画像に入れる指示を含める
+- **画像内に英語テキストメッセージを含める**: 感情に応じた短い英語メッセージ（2-5単語）を画像に入れる指示を含める
 
 例:
-- 喜び → "A cheerful cartoon character jumping with joy, bright colors, happy atmosphere, with Japanese text 'やったね!' displayed prominently"
-- 悲しみ → "A cute character sitting under rain clouds, soft pastel colors, melancholic mood, with Japanese text 'だいじょうぶ' in gentle font"
-- 愛情 → "Two adorable characters hugging with hearts around them, warm pink tones, with Japanese text 'ありがとう♡' in decorative style"
-- 応援 → "An energetic character cheering with pom-poms, vibrant colors, motivational scene, with Japanese text 'がんばれ!' in bold letters"
-- 感謝 → "Cute character bowing with sparkles, warm orange tones, with Japanese text 'ありがとう' in elegant font"
+- 喜び → "A cheerful cartoon character jumping with joy, bright colors, happy atmosphere, with English text 'You did it!' displayed prominently"
+- 悲しみ → "A cute character sitting under rain clouds, soft pastel colors, melancholic mood, with English text 'It's okay' in gentle font"
+- 愛情 → "Two adorable characters hugging with hearts around them, warm pink tones, with English text 'Thank you♡' in decorative style"
+- 応援 → "An energetic character cheering with pom-poms, vibrant colors, motivational scene, with English text 'Go for it!' in bold letters"
+- 感謝 → "Cute character bowing with sparkles, warm orange tones, with English text 'Thanks!' in elegant font"
+- 励まし → "Supportive character with warm smile, gentle colors, with English text 'You got this!' in friendly font"
 """,
                     },
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": "このスタンプの感情を読み取り、それに応える画像のプロンプトを英語で作成してください。感情に合った短い日本語メッセージを画像内に入れる指示も含めてください。"},
+                            {"type": "text", "text": "このスタンプの感情を読み取り、それに応える画像のプロンプトを英語で作成してください。感情に合った短い英語メッセージ（2-5単語）を画像内に入れる指示も含めてください。"},
                             {
                                 "type": "image_url",
                                 "image_url": {"url": sticker_url},
